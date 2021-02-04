@@ -1,0 +1,1292 @@
+
+
+NAME        TES_Zekasi
+;****************************************************************************  
+;  Transcranial Electrical Stimulation Device Firmware
+;  Constant Current Generation with a 9V compliance voltage, 
+;  with offset and a maximum 30Hz sine wave using PWM timer Timer_B.
+;  
+;  Referring to Mike Mitchell's SLAA116 App note.
+;
+;  Description: This program demonstrates the usage of a PWM timer together 
+;  with external filters to implement a DAC.  The program shows how to
+;  create a 250Hz sine wave, a 125Hz ramp, and a DC level with Timer_B.  
+;  Timer_A could also be used in the same manner.  A sine table holds the 
+;  sample values for the sinusoid.  To create the ramp, the PWM value is 
+;  simply incremented. The DC level is created by storing charge on an
+;  RC network using a PWM output to provide the charge.  The value of the DC
+;  voltage directly corresponds to the duty cycele of the PWM signal.  After 
+;  initialization, the CPU is put into LPM0.  It remains there until the
+;  CCIFG0 interrupt from Timer_B wakes it up.  In the Timer_B ISR, the next 
+;  value for the sinusoid is loaded into CCR1 and the ramp value is incremented
+;  and loded into CCR2. Upon return form the ISR, the CPU goes back into LPM0.  
+;
+;  Adnan Kurt
+;  Teknofil
+;  19Jan2010
+;
+;****************************************************************************  
+#include    "MSP430X14x.H"                  ; Include Standard Defs
+
+Delta       EQU     250                     ; Delta = Target DCO/8192
+                                            ; Target DCO frequency = 2.048MHz
+                                            ; This value is used in the
+                                            ; software FLL routine to 
+                                            ; calibrate the DCO frequency
+                                            ; using the 32768Hz oscillator
+                                            ; as a reference.  For more
+                                            ; information on stabilizing
+                                            ; the DCO or the FLL routine
+                                            ; see the application report
+                                            ; titled "Controlling the DCO
+                                            ; frequency of the MSP430x11x"
+                                            ; Literature number SLAA074
+;-----------------------------------------------------------------------------           
+            RSEG    DATA16_N        
+;        ORG    0x200
+Ali         DS      2
+Ada         DS      2
+Mete        DS      2
+Nese        DS      2
+Aras        DS      2
+Deniz       DS      2
+Bat         DS      2
+JR          DS      2
+;----------------------------------------------------------------------------- 
+            RSEG    CODE                    
+;----------------------------------------------------------------------------- 
+;	MSP_Code Generated with Excel
+Sin_K1_Tab    
+            DW	127
+            DW	151
+            DW	175
+            DW	196
+            DW	216
+            DW	231
+            DW	243
+            DW	251
+            DW	254
+            DW	253
+            DW	247
+            DW	236
+            DW	222
+            DW	204
+            DW	183
+            DW	160
+            DW	136
+            DW	111
+            DW	88
+            DW	65
+            DW	45
+            DW	28
+            DW	14
+            DW	5
+            DW	1
+            DW	4
+            DW	13
+            DW	27
+            DW	43
+            DW	63
+            DW	85
+            DW	109	
+;Sin_Tab_K2
+            DW	119
+            DW	142
+            DW	164
+            DW	184
+            DW	202
+            DW	217
+            DW	228
+            DW	235
+            DW	238
+            DW	237
+            DW	231
+            DW	221
+            DW	208
+            DW	191
+            DW	171
+            DW	150
+            DW	127
+            DW	104
+            DW	82
+            DW	61
+            DW	42
+            DW	26
+            DW	13
+            DW	5
+            DW	1
+            DW	4
+            DW	13
+            DW	25
+            DW	41
+            DW	59
+            DW	80
+            DW	102
+;Sin_Tab_K3
+            DW	111
+            DW	132
+            DW	153
+            DW	172
+            DW	189
+            DW	202
+            DW	213
+            DW	220
+            DW	223
+            DW	221
+            DW	216
+            DW	207
+            DW	194
+            DW	178
+            DW	160
+            DW	140
+            DW	119
+            DW	97
+            DW	77
+            DW	57
+            DW	39
+            DW	24
+            DW	13
+            DW	4
+            DW	1
+            DW	4
+            DW	12
+            DW	23
+            DW	38
+            DW	55
+            DW	75
+            DW	96
+;Sin_Tab_K4
+            DW	103
+            DW	123
+            DW	142
+            DW	160
+            DW	175
+            DW	188
+            DW	198
+            DW	204
+            DW	207
+            DW	205
+            DW	200
+            DW	192
+            DW	180
+            DW	165
+            DW	149
+            DW	130
+            DW	110
+            DW	90
+            DW	71
+            DW	53
+            DW	37
+            DW	23
+            DW	12
+            DW	4
+            DW	1
+            DW	4
+            DW	11
+            DW	21
+            DW	35
+            DW	51
+            DW	69
+            DW	89
+;Sin_Tab_K5
+            DW	95
+            DW	113
+            DW	131
+            DW	147
+            DW	162
+            DW	173
+            DW	182
+            DW	188
+            DW	191
+            DW	190
+            DW	185
+            DW	177
+            DW	166
+            DW	153
+            DW	137
+            DW	120
+            DW	102
+            DW	83
+            DW	66
+            DW	49
+            DW	34
+            DW	21
+            DW	11
+            DW	4
+            DW	1
+            DW	3
+            DW	10
+            DW	20
+            DW	32
+            DW	47
+            DW	64
+            DW	82
+;Sin_Tab_K6
+            DW	87
+            DW	104
+            DW	120
+            DW	135
+            DW	148
+            DW	159
+            DW	167
+            DW	173
+            DW	175
+            DW	174
+            DW	170
+            DW	162
+            DW	152
+            DW	140
+            DW	126
+            DW	110
+            DW	93
+            DW	76
+            DW	60
+            DW	45
+            DW	31
+            DW	19
+            DW	10
+            DW	3
+            DW	1
+            DW	3
+            DW	9
+            DW	18
+            DW	30
+            DW	43
+            DW	59
+            DW	75
+;Sin_Tab_K7
+            DW	79
+            DW	94
+            DW	109
+            DW	123
+            DW	135
+            DW	144
+            DW	152
+            DW	157
+            DW	159
+            DW	158
+            DW	154
+            DW	147
+            DW	138
+            DW	127
+            DW	114
+            DW	100
+            DW	85
+            DW	69
+            DW	55
+            DW	41
+            DW	28
+            DW	17
+            DW	9
+            DW	3
+            DW	1
+            DW	3
+            DW	8
+            DW	16
+            DW	27
+            DW	39
+            DW	53
+            DW	68
+;Sin_Tab_K8
+            DW	71
+            DW	85
+            DW	98
+            DW	110
+            DW	121
+            DW	130
+            DW	137
+            DW	141
+            DW	143
+            DW	142
+            DW	139
+            DW	133
+            DW	125
+            DW	114
+            DW	103
+            DW	90
+            DW	76
+            DW	62
+            DW	49
+            DW	36
+            DW	25
+            DW	15
+            DW	8
+            DW	3
+            DW	1
+            DW	2
+            DW	7
+            DW	15
+            DW	24
+            DW	35
+            DW	48
+            DW	61
+;Sin_Tab_K9
+            DW	63
+            DW	75
+            DW	87
+            DW	98
+            DW	108
+            DW	115
+            DW	121
+            DW	125
+            DW	127
+            DW	126
+            DW	123
+            DW	118
+            DW	111
+            DW	102
+            DW	91
+            DW	80
+            DW	68
+            DW	55
+            DW	44
+            DW	32
+            DW	22
+            DW	14
+            DW	7
+            DW	2
+            DW	1
+            DW	2
+            DW	6
+            DW	13
+            DW	21
+            DW	31
+            DW	42
+            DW	54
+;Sin_Tab_K10
+            DW	55
+            DW	66
+            DW	76
+            DW	86
+            DW	94
+            DW	101
+            DW	106
+            DW	110
+            DW	111
+            DW	110
+            DW	108
+            DW	103
+            DW	97
+            DW	89
+            DW	80
+            DW	70
+            DW	59
+            DW	48
+            DW	38
+            DW	28
+            DW	19
+            DW	12
+            DW	6
+            DW	2
+            DW	1
+            DW	2
+            DW	6
+            DW	11
+            DW	19
+            DW	27
+            DW	37
+            DW	48
+;Sin_Tab_K11
+            DW	47
+            DW	56
+            DW	65
+            DW	73
+            DW	81
+            DW	86
+            DW	91
+            DW	94
+            DW	95
+            DW	95
+            DW	92
+            DW	88
+            DW	83
+            DW	76
+            DW	68
+            DW	60
+            DW	51
+            DW	41
+            DW	33
+            DW	24
+            DW	17
+            DW	10
+            DW	5
+            DW	2
+            DW	1
+            DW	1
+            DW	5
+            DW	10
+            DW	16
+            DW	23
+            DW	32
+            DW	41
+;Sin_Tab_K12
+            DW	39
+            DW	47
+            DW	54
+            DW	61
+            DW	67
+            DW	72
+            DW	76
+            DW	78
+            DW	79
+            DW	79
+            DW	77
+            DW	73
+            DW	69
+            DW	63
+            DW	57
+            DW	50
+            DW	42
+            DW	34
+            DW	27
+            DW	20
+            DW	14
+            DW	8
+            DW	4
+            DW	1
+            DW	1
+            DW	1
+            DW	4
+            DW	8
+            DW	13
+            DW	19
+            DW	26
+            DW	34
+;Sin_Tab_K13
+            DW	31
+            DW	37
+            DW	43
+            DW	49
+            DW	54
+            DW	57
+            DW	60
+            DW	62
+            DW	63
+            DW	63
+            DW	61
+            DW	59
+            DW	55
+            DW	51
+            DW	45
+            DW	40
+            DW	34
+            DW	27
+            DW	22
+            DW	16
+            DW	11
+            DW	7
+            DW	3
+            DW	1
+            DW	1
+            DW	1
+            DW	3
+            DW	6
+            DW	10
+            DW	15
+            DW	21
+            DW	27
+;Sin_Tab_K14
+            DW	23
+            DW	28
+            DW	32
+            DW	36
+            DW	40
+            DW	43
+            DW	45
+            DW	47
+            DW	47
+            DW	47
+            DW	46
+            DW	44
+            DW	41
+            DW	38
+            DW	34
+            DW	30
+            DW	25
+            DW	20
+            DW	16
+            DW	12
+            DW	8
+            DW	5
+            DW	2
+            DW	1
+            DW	1
+            DW	1
+            DW	2
+            DW	5
+            DW	8
+            DW	11
+            DW	16
+            DW	20
+;Sin_Tab_K15
+            DW	15
+            DW	18
+            DW	21
+            DW	24
+            DW	27
+            DW	28
+            DW	30
+            DW	31
+            DW	31
+            DW	31
+            DW	30
+            DW	29
+            DW	27
+            DW	25
+            DW	22
+            DW	20
+            DW	17
+            DW	13
+            DW	11
+            DW	8
+            DW	5
+            DW	3
+            DW	1
+            DW	1
+            DW	1
+            DW	1
+            DW	1
+            DW	3
+            DW	5
+            DW	7
+            DW	10
+            DW	13
+;Sin_Tab_K16
+            DW	6
+            DW	7
+            DW	8
+            DW	10
+            DW	10
+            DW	11
+            DW	12
+            DW	12
+            DW	12
+            DW	12
+            DW	12
+            DW	12
+            DW	11
+            DW	10
+            DW	9
+            DW	8
+            DW	6
+            DW	5
+            DW	4
+            DW	3
+            DW	2
+            DW	1
+            DW	1
+            DW	1
+            DW	1
+            DW	1
+            DW	1
+            DW	1
+            DW	2
+            DW	3
+            DW	4
+            DW	5
+            
+;       Zero causes glitches, Really!  ak.
+;	END DATA
+
+Sine_Tab    DW      255                     ; Sine Table.  These are the count
+            DW      254                     ; values in decimal that will
+            DW      246                     ; go into TBCCR1 to change the
+            DW      234                     ; PWM duty cycle.
+            DW      219                     ; Must use words instead of bytes
+            DW      199                     ; because must move words into
+            DW      177                     ; TB registers.
+            DW      153                     ; Don't use a '0' as a sample value
+            DW      128                     ; The timer will glitch.
+            DW      103
+            DW      79 
+            DW      57 
+            DW      37 
+            DW      22 
+            DW      10           
+            DW      2  
+            DW      1
+            DW      2 
+            DW      10
+            DW      22 
+            DW      37 
+            DW      57           
+            DW      79 
+            DW      103
+            DW      128
+            DW      153
+            DW      177
+            DW      199
+            DW      219          
+            DW      234
+            DW      246          
+            DW      255            
+
+;-----------------   Code Starts Here   --------------------------------------   
+RESET       mov     #09FEh,SP               ; Initialize stackpointer
+
+StopWDT     mov     #WDTPW+WDTHOLD,&WDTCTL  ; Stop WDT
+;-----------------------------------------------------------------------------
+;          Interface Descriptions
+gLED   EQU   BIT7                         ; P3.7
+rLED   EQU   BIT6                         ; P3.6
+PBS    EQU   BIT6                         ; P6.6
+BuzP   EQU   BIT2                         ; P1.2
+BuzN   EQU   BIT1                         ; P1.1
+LupSa  EQU   20000
+                                          ; Battery Sampler    p6.7
+        bis.b   #gLED|rLED ,&P3DIR        ; Set P1 gLED and rLED pin to output
+        bic.b   0x00, &P3OUT
+        bic.b   #gLED|rLED ,&P3OUT        ; LEDs off
+        bis.b   #BuzP|BuzN ,&P1DIR        ; Set P1 Buzzer pins to output
+        bic.b   0x00, &P1OUT
+        bic.b   #BuzP|BuzN ,&P1OUT        ; Buzzer off
+        bis.b   #~PBS ,&P6DIR             ; Set P6 PushButtun pin to Input
+        bic.b   0x00, &P6OUT
+;-----------------------------------------------------------------------------
+
+;------------------------------- ADC Init ------------------------------------
+            bis.b   #BIT3+BIT4+BIT5+BIT7,&P6SEL ; Enable A/D channel inputs
+                                            ;
+SetupADC12  mov     #REFON+REF2_5V+ADC12ON+MSC+SHT0_8,&ADC12CTL0  
+                                            ; Turn on ADC12, set MSC
+            mov     #SHP+CONSEQ_1,&ADC12CTL1; Use samp. timer, single sequence
+            bis.b   #SREF_1+INCH_3,&ADC12MCTL0     ; Vr+=Vref+, channel=O 
+            bis.b   #SREF_1+INCH_4,&ADC12MCTL1     ; Vr+=Vref+, channel=F 
+            bis.b   #SREF_1+INCH_5,&ADC12MCTL2     ; Vr+=Vref+, channel=A 
+            bis.b   #SREF_1+INCH_7+EOS,&ADC12MCTL3 ; Vr+=Vref+, channel=Batt
+                                                   ; end seq.
+            mov     #03600h,R7              ; Delay for needed ref start-up.                                                   
+L$1         dec     R7                      ; See datasheet for details.
+            jnz     L$1                     ;
+;           mov     #BIT3,&ADC12IE          ; Enable ADC12IFG.0 for ADC12MEM0
+            bis     #ENC,&ADC12CTL0         ; Enable conversions   
+
+SetupP4     bis.b   #00Eh,&P4SEL            ; Select TB1, TB2, TB3 instead of 
+            bis.b   #00Eh,&P4DIR            ; P4.x, and set as outputs
+            bic.b   #00Eh,&P4DIR            ; P4.x, and set as outputs/ TurnOff
+
+SetupBC     mov.b   #0A6h,&BCSCTL1          ; ACLK is divided by 4. RSEL=6,
+                                            ; no division for MCLK or SMCLK,
+                                            ; DCO sources MCLK and SMCLK.
+                                            ; XT2 is off.
+                                            ; NOTE: To determine the value of 
+                                            ; Rsel for a desired DCO frequency, 
+                                            ; refer to the DCO table in the 
+                                            ; datasheet. 
+
+            call    #Delay                  ; Delay for crystal stabilization.
+                                            ; Need to put a delay here because
+                                            ; the 32768Hz crystal is used as
+                                            ; a reference to stabilize the DCO
+                                            ; frequency.  Therefore, the 32768
+                                            ; crystal needs to be stable.
+
+            call    #SW_FLL                 ; Call the routine to Stabilize 
+                                            ; the DCO clock.
+
+            call    #TB_SETUP               ; Setup Timer_B for PWM generation
+
+            clr     R15                     ; R15 and R14 used as pointers 
+            clr     R14                     ; to the sine table and to hold the
+                                            ; ramp value after the DCO is
+                                            ; stabilized
+            clr     R11                     ; Init temporary delay
+            mov     #0FFh,R11               ; This should set the period
+                                            ;
+;           eint                            ; Enable interrupts
+;------------------------------------------------------------------------------
+; TES Loop
+;------------------------------------------------------------------------------
+; Iteration value for delay loop, and inner moredelay loop
+
+SubDo      EQU  1024                      ; Value for TES duration subunit
+DelayLoops EQU  3000
+TES_Dura   EQU  621                       ; Duration of the Stimulation Period
+                                          ; Loop constant under these conditions
+                                          ; is measured to be 1.30 counts/ sec
+                                          ; 391 counts is 3minutes 9sec
+                                          ; measured. 621 counts expected 
+                                          ; to give 5 minutes.
+V_Crit     EQU  1555                      ; 8.77V battery reads 1965 counts
+                                          ; Battery+ Schottky diode+ 330K + 56K
+                                          ; Voltage read over 56K. 7 volts
+                                          ; chosen to be a critical value.            
+
+; Morse Code Symbol periods in about 0.1s quantum
+; LETTER is the period between letters, ENDTX terminates the message
+
+DUB     EQU     44
+DIP     EQU     6
+SOSPA   EQU     99
+PA      EQU     7
+DOT     EQU     11
+DASH    EQU     33
+SPACE   EQU     22
+LETTER  EQU     2                         ; This is Buggy. Gives an LED flash
+ENDTX   EQU     0xFF
+;------------------------------------------------------------------------------
+; Loop Timing Setup
+;------------------------------------------------------------------------------
+            mov     #4, &CCR0             ; ACLK divided by 1. 8 gives 455 Hz.
+                                          ; 1 gives 2048 Hz.  
+            mov     #12, &Bat             ; Initial Bat value
+            mov     #0, &Ali
+            mov     #0, &Ada
+            mov     #0, &Mete
+            mov     #0, &Nese
+Setup_LT    mov     #TASSEL_1+MC_1+ID_0+TACLR, &TACTL   
+                                          ; Start Timer_A, up to CCR0 mode,
+                                          ; divide by 1 clock, clock from ACLK,
+                                          ; clear timer, 32kHz xtal 
+Graceful_Start:
+        bic.b   #00Eh,&P4DIR              ; P4.x, and set as outputs/ TurnOff
+        mov     #2000, &Aras              ; Bip Sound duration
+        mov     #4, &Deniz                ; Bip frequency
+        call    #Bip
+Morse   mov     &Mete, R4
+        jmp     Mes_Test                  ; Jump to test
+Mes_Loop:
+        bis.b   #gLED , &P3OUT            ; LEDs on
+        mov     &Mete, R4
+        mov.b   Start(R4), &Ali           ; Load duration of delay as parameter
+        call    #DelayQuanta              ; Call Subroutine: Don't Forget #
+        bic.b   #gLED , &P3OUT            ; LEDs off
+        mov.w   #SPACE , &Ali             ; Load Duration of Space delay
+        call    #DelayQuanta              ; Call Subroutine: Don't Forget #
+        inc.w   &Mete                     ; Next symbol to send
+        mov     &Mete, R4
+Mes_Test:
+        cmp.b   #ENDTX, Start(R4)         ; End of Message?
+        jne     Mes_Loop                  ; Repeat
+        bic.b   #gLED , &P3OUT            ; LEDs off
+        mov.w   #SPACE, &Ali              ; Load Duration of Space delay
+        call    #DelayQuanta     
+        mov.w   #SPACE, &Ali              ; Load Duration of Space delay
+        call    #DelayQuanta           
+        call    #Bip        
+        eint                              ; Enable interrupts
+;------------------------------------------------------------------------------
+; Control States
+;------------------------------------------------------------------------------        
+
+        mov     #0, &Mete
+        mov     #0, &Nese
+        mov     #0, &Aras
+        mov     #0, &Deniz
+        mov     #0, &JR
+InfLoop:   
+BattMon bis     #ADC12SC, &ADC12CTL0      ; Start conversions
+        mov     &ADC12MEM3, R8            ; Move A7 result -B, IFG is reset
+        cmp     &V_Crit, R8               ; Test critical voltage
+        jn      SOSi                      ; If VBatt<VCrit then SOSi
+        jmp     Conti                     ; Else continue
+SOSi    dec.b   &Bat                      ; Decrement Bat value, to signal
+        jz      Morsy                     ; SOS at increasing frequencies
+        jmp     Conti                     ; Continue, till Bat exhausted
+Morsy   mov.b   #4, &Bat                  ; Load new Bat value
+        mov.b   #44, &Aras                ; Load bip duration with cons value
+;        sub.b   #0xff, &Aras              ; Make it an increasing function
+;Morsy   mov.b   R8, &Bat                 ; Load new Bat value
+ ;       mov.b   R8, &Aras                ; Load bip duration with bat value
+  ;      sub.b   #0xff, &Aras             ; Make it an increasing function
+        mov     #1, &Deniz                ; Keep frequency a high pitch
+        call    #Bip
+        call    #SOS       
+Conti   call    #HeartRate                ; Normal background operation with HR
+;       cmp     #2, &JR                   ; Button on for 2 cycles?
+;       jge     ThinkOnce                 ; Button pressed long enough to decide
+        bit.b   #PBS, &P6IN               ; Test PBS
+        jz      DeBoun                    ; Jump if zero to DeBoun 
+        jmp     InfLoop                   ; Loop to check PBS
+                                          ; Zero on button press!
+                                          ; Loop Forever 
+DeBoun  mov     #1000, &JR
+DeLup   dec     &JR                       ; Increment Nese for debounce and aim
+        jz      CheckAgain
+        jmp     DeLup
+CheckAgain:
+        bit.b   #PBS, &P6IN               ; Test PBS
+        jz      SureFall                  ; Test for fall
+        jmp     InfLoop                   ; Loop again
+SureFall:
+        bit.b   #PBS, &P6IN               ; Test PBS
+        jnz     ThinkOnce       
+        jmp     SureFall
+ThinkOnce:
+        mov     #0, &JR                   ; Initialize debouncer
+        mov     #0, &Mete                 ; Initialize loop counter
+        jmp     TESLoop                   ; On button press do TES
+        
+; The remarked code was to test more button presses and to go for different
+; device behavior. However, it complicates the user intervention, 
+; so they are removed.
+;------------------------------------------------------------------------------
+; Remnant Code
+;------------------------------------------------------------------------------
+;OneMinute:
+     ;   inc     &Mete
+    ;    cmp     #DelayLoops, &Mete        ; Wait for 3000 counts
+   ;     jnz     OneMinute
+  ;      bit.b   #PBS ,&P6IN               ; Test PBS
+ ;       jz      InfLoop                   ; Pressed PB too long enough, rerun
+;        mov     #0, &Mete                 ; Initialize loop counter        
+;ThinkAgain:
+ ;       inc     &Mete
+;        cmp     #DelayLoops, &Mete        ; Wait for 3000 counts
+    ;    jnz     ThinkAgain
+   ;     bit.b   #PBS ,&P6IN               ; Test PBS
+  ;      jnz     TESLoop                   ; Basic, 5min stimulus
+ ;       mov     #0, &Mete                 ; Initialize loop counter    
+;        jmp     Nirvana                   ; Quick double click, awarded with
+;                                          ; VeryLongDuration
+;Nirvana:
+      ;  inc     &Mete
+     ;   cmp     #DelayLoops, &Mete        ; Wait for 3000 counts
+    ;    jnz     Nirvana
+   ;     bit.b   #PBS ,&P6IN               ; Test PBS 
+  ;      jz      InfLoop                   ; Reset the process
+ ;       mov     #10000, &TES_Dura         ; Promised duration
+;        jmp     TESLoop                   ; with VeryLongDuration grace period
+;------------------------------------------------------------------------------
+
+TESLoop:                                  ; Should get Duration Value
+                                          ; It is TES_Dura, 1000d initially
+        mov     #2, &Deniz
+        mov     #SOSPA, &Aras
+        call    #Bip
+        bis     #MC0, &TBCTL              ; Start timer_B in up mode 
+        bis.b   #00Eh, &P4DIR             ; P4.x, and set as outputs/ TurnOn
+        mov     &SubDo, &CCR0             ; Timer A counter
+        mov     #0, &Nese
+Dura    cmp     &TES_Dura, &Nese
+        jz      Donna                     ; Stimulation Done
+        inc     &Nese
+        bit.b   #PBS, &P6IN               ; Test rSW TES_Dura
+        jz      EndSes                    ; On Button Press during stimulation
+                                          ; ends the session immediately
+        bic     #TAIFG, &TACTL            ; Clear overflow flag
+Do      bit     #TAIFG, &TACTL            ; Wait for overflow
+        jz      Do
+        jmp     Dura
+Donna   jmp     EndSes
+;       dint                              ; Disable Interrupts
+
+EndSes: 
+        bic     #MC0, &TBCTL              ; Stop timer_B in up mode
+        bic.b   #00Eh, &P4DIR             ; P4.x, and set as outputs/ TurnOff
+        mov     #2, &Deniz
+        mov     #SOSPA, &Aras
+        call    #Bip     
+        mov     #8, &Deniz
+        mov     #SOSPA, &Aras
+        call    #Bip  
+        mov     #0, &Mete
+        mov     #0, &Nese
+        mov     #0, &Aras
+        mov     #0, &Deniz
+        jmp     InfLoop                   ; Jump if not zero to main
+
+            
+// Subroutine for Delay Quantum, total R12*0.1 s
+// Parameter is passed through R12 and destroyed. R4 used for loop counter.
+// To take care of R12=0 condition, test is done first.
+
+DelayQuanta:
+        jmp     LoopTest
+OuterLoop:
+        mov.w   #DelayLoops, &Ada         ; Initialize Loop Counter
+DelayLoop:                                ; Clock Cycles in [ brackets]
+        dec.w   &Ada                      ; Decrement Loop Counter [1]
+        jnz     DelayLoop                 ; Repeat if not zero [2]
+        dec.w   &Ali                      ; Decrement number of quantum
+LoopTest:
+        cmp.w   #0, &Ali                  ; Finished all quanta?
+        jnz     OuterLoop                 ; Repeat then
+        ret                               ; Return to mom -caller.
+           
+;            bis     #LPM0,SR             ; Put CPU to sleep.
+                                          ; This is the end of the program
+                                          ; except for handling the CCIFG0
+                                          ; interrupt, which is where the
+                                          ; PWM values are updated.
+                                            
+;-----------------------------------------------------------------------------
+;           CODE ENDS HERE    
+;-----------------------------------------------------------------------------
+
+;----------------------------------------------------------------------------- 
+HeartRate;      LED Heart Rate
+;-----------------------------------------------------------------------------
+        bic.b   #0,  &P3OUT               ; LEDs on
+        bis.b   #rLED,  &P3OUT            ; LEDs on
+        mov.b   #DUB, &Ali                ; Load duration of delay as parameter
+        call    #DelayQuanta              ; Call Subroutine: Don't Forget #
+        bic.b   #rLED,  &P3OUT            ; LEDs off
+        mov.w   #SPACE , &Ali             ; Load Duration of Space delay
+        call    #DelayQuanta              ; Call Subroutine: Don't Forget #
+        bis.b   #rLED,  &P3OUT            ; LEDs on
+        mov.b   #DIP, &Ali    ; Load duration of delay as parameter
+        call    #DelayQuanta              ; Call Subroutine: Don't Forget #
+        bic.b   #rLED,  &P3OUT            ; LEDs off
+        mov.w   #PA , &Ali                ; Load Duration of Space delay
+        call    #DelayQuanta              ; Call Subroutine: Don't Forget #       
+        bis.b   #rLED,  &P3OUT            ; LEDs on
+        mov.b   #DIP, &Ali    ; Load duration of delay as parameter
+        call    #DelayQuanta              ; Call Subroutine: Don't Forget #
+        bic.b   #rLED,  &P3OUT            ; LEDs off
+        mov.w   #SOSPA , &Ali             ; Load Duration of Space delay
+        call    #DelayQuanta              ; Call Subroutine: Don't Forget #
+        bic.b   #rLED,  &P3OUT            ; LEDs off
+        ret       
+;----------------------------------------------------------------------------- 
+SOS;      LED SOS -Battery Warning
+;-----------------------------------------------------------------------------
+        bic.b   #0,  &P3OUT               ; LEDs on
+        bis.b   #gLED,  &P3OUT            ; LEDs on
+        mov.b   #DOT, &Ali                ; Load duration of delay as parameter
+        call    #DelayQuanta              ; Call Subroutine: Don't Forget #
+        bic.b   #gLED,  &P3OUT            ; LEDs off
+        mov.w   #PA , &Ali                ; Load Duration of Space delay
+        call    #DelayQuanta              ; Call Subroutine: Don't Forget #
+        bis.b   #gLED,  &P3OUT            ; LEDs on
+        mov.b   #DOT, &Ali    ; Load duration of delay as parameter
+        call    #DelayQuanta              ; Call Subroutine: Don't Forget #
+        bic.b   #gLED,  &P3OUT            ; LEDs off
+        mov.w   #PA , &Ali                ; Load Duration of Space delay
+        call    #DelayQuanta              ; Call Subroutine: Don't Forget #       
+        bis.b   #gLED,  &P3OUT            ; LEDs on
+        mov.b   #DOT, &Ali    ; Load duration of delay as parameter
+        call    #DelayQuanta              ; Call Subroutine: Don't Forget #
+        bic.b   #gLED,  &P3OUT            ; LEDs off
+        mov.w   #PA , &Ali                ; Load Duration of Space delay
+        call    #DelayQuanta              ; Call Subroutine: Don't Forget #
+        bis.b   #gLED,  &P3OUT            ; LEDs on
+        mov.b   #DASH, &Ali               ; Load duration of delay as parameter
+        call    #DelayQuanta              ; Call Subroutine: Don't Forget #
+        bic.b   #gLED,  &P3OUT            ; LEDs off
+        mov.w   #PA , &Ali                ; Load Duration of Space delay
+        call    #DelayQuanta              ; Call Subroutine: Don't Forget #
+        bis.b   #gLED,  &P3OUT            ; LEDs on
+        mov.b   #DASH, &Ali    ; Load duration of delay as parameter
+        call    #DelayQuanta              ; Call Subroutine: Don't Forget #
+        bic.b   #gLED,  &P3OUT            ; LEDs off
+        mov.w   #PA , &Ali                ; Load Duration of Space delay
+        call    #DelayQuanta              ; Call Subroutine: Don't Forget #       
+        bis.b   #gLED,  &P3OUT            ; LEDs on
+        mov.b   #DOT, &Ali                ; Load duration of delay as parameter
+        call    #DelayQuanta              ; Call Subroutine: Don't Forget #
+        bic.b   #gLED,  &P3OUT            ; LEDs off
+        mov.w   #PA , &Ali                ; Load Duration of Space delay
+        call    #DelayQuanta              ; Call Subroutine: Don't Forget #
+        bis.b   #gLED,  &P3OUT            ; LEDs on
+        mov.b   #DOT, &Ali    ; Load duration of delay as parameter
+        call    #DelayQuanta              ; Call Subroutine: Don't Forget #
+        bic.b   #gLED,  &P3OUT            ; LEDs off
+        mov.w   #PA , &Ali                ; Load Duration of Space delay
+        call    #DelayQuanta              ; Call Subroutine: Don't Forget #       
+        bis.b   #gLED,  &P3OUT            ; LEDs on
+        mov.b   #DOT, &Ali    ; Load duration of delay as parameter
+        call    #DelayQuanta              ; Call Subroutine: Don't Forget #
+        bic.b   #gLED,  &P3OUT            ; LEDs off
+        mov.w   #PA , &Ali                ; Load Duration of Space delay
+        call    #DelayQuanta              ; Call Subroutine: Don't Forget #
+        bic.b   #gLED,  &P3OUT            ; LEDs off
+        ret
+;----------------------------------------------------------------------------- 
+Bip;      Bip Sound Aras for duration, Deniz for frequency
+;----------------------------------------------------------------------------- 
+        clr.w   &Mete                     ; Init counter
+        mov.b   #BuzP|~BuzN, &P1OUT       ; Init Buzzer Pins parity
+;       mov.b   #BuzP|BuzN, &P1OUT        ; Init No Sound
+        mov     &Deniz, &CCR0
+        clr     &Nese
+Zil     cmp     &Aras, &Nese
+        jz      Don
+        xor.b   #BuzP|BuzN, &P1OUT        ; Toggle Buzzer Pins
+        inc     &Nese
+        bic     #TAIFG, &TACTL            ; Clear overflow flag
+Done    bit     #TAIFG, &TACTL            ; Wait for overflow
+        jz      Done
+        jmp     Zil
+Don     ret
+   
+;----------------------------------------------------------------------------- 
+Delay;      Software delay for crystal stabilization
+;----------------------------------------------------------------------------- 
+            mov     #0004h, R15
+L1          mov     #0FFFFh, R14            ; This should ideally be about a sec.
+L2          dec     R14                     ; 
+            jnz     L2                      ;  
+                                            ; 
+            xor.b   #~rLED|gLED,  &P3OUT    ; LEDs on
+            dec     R15                     ;
+            jnz     L1                      ;
+            ret                             ;
+                                            ;
+;----------------------------------------------------------------------------- 
+SW_FLL;    Subroutine: Stabilizes DCO frequency.
+           ; This routine uses the 32768Hz crystal oscillator as a reference
+           ; frequency to stabilize and trim the DCO oscillator to the desired
+           ; frequency of 2.048MHz.  This is only required in applications that
+           ; need a specific DCO frequency and for MSP430 devices that do not
+           ; have an FLL module.  See the MSP430x3xx and MSP430x1xx Family 
+           ; User's Guides (literature numbers SLAU012 and SLAU049 repsecitvely)
+           ; for more information on the clock systems employed on MSP430 devices
+           ;
+           ; The routine works by counting how many DCO clock cycles are inside
+           ; of one ACLK cycle (actually 1/4 ACLK cycle because ACLK is divided
+           ; by 4).  Timer_A is used to determine the number of DCO clocks and
+           ; this value is then compared to the target value (Delta).  If the
+           ; number is too high, the DCO is decremented.  If the number is too
+           ; low, the DCO is incremented. The comparison is then made again.  
+           ; This process is repeated until the target value is reached.  When
+           ; the target value is obtained, the DCO is oscillating at the desired
+           ; frequency.  See the application report "Controlling the DCO
+           ; Frequency of the MSP430x11x devices", literature number SLAA074,
+           ; for more application information related to controlling the DCO.
+           ;
+           ; This routine is run only once in this example, but in an
+           ; application it would likely need to be run on a periodic 
+           ; basis to make sure the DCO remained calibrated.  
+;----------------------------------------------------------------------------- 
+    
+            clr     R15                     ;							
+Setup_TA    mov     #TASSEL1+TACLR,&TACTL   ; SMCLK clocks TA
+Setup_CC2   mov     #CCIS0+CM0+CAP,&CCTL2   ; Define CCR2,CAP,ACLK	
+            bis     #MC1,&TACTL             ; Start timer_A: Continous Mode
+Test_DCO    bit     #CCIFG,&CCTL2           ; Test capture flag
+            jz      Test_DCO                ;
+            bic     #CCIFG,&CCTL2           ; Clear capture flag
+                                            ;
+AdjDCO      mov     &CCR2,R14               ; R14 = captured SMCLK
+            sub     R15,R14                 ; R14 = capture difference
+            mov     &CCR2,R15               ; R15 = captured SMCLK
+            cmp     #Delta,R14              ; Delta = SMCLK/(32768/4)
+            jlo     IncDCO                  ;
+            jeq     DoneFLL                 ;
+DecDCO      dec.b   &DCOCTL                 ;
+            jmp     Test_DCO                ;
+IncDCO      inc.b   &DCOCTL                 ;
+            jmp     Test_DCO                ;
+DoneFLL     clr     &CCTL2                  ; Stop CCR2
+            clr     &TACTL                  ; Stop timer_A
+            ret                             ; Return from subroutine
+;----------------------------------------------------------------------------- 
+TB_SETUP;    Subroutine: Setup Timer_B for PWM generation
+;----------------------------------------------------------------------------- 
+            mov     #TBSSEL1+TBCLR,&TBCTL   ; SMCLK clocks TB.
+            mov     #CCIE,&TBCCTL0          ; Set CCR0 in compare mode, enable
+                                            ; it's interrupt
+            mov     #0FFh,&TBCCR0           ; Put 255d in CCR0.  This will set
+                                            ; the period of the PWM output to
+                                            ; 256 counts(8-bits).  This gives
+                                            ; an 8-bit DAC.
+            mov     #02E0h,&TBCCTL1         ; Set CCRx in compare mode, disable
+            mov     #02E0h,&TBCCTL2         ; interrupt, set outmode to '7' which
+            mov     #02E0h,&TBCCTL3         ; is reset/set.  EQU0 sets the output
+                                            ; EQU1 will reset it. Set the load
+                                            ; condition for the compare latch
+                                            ; to be when the counter counts to
+                                            ; 0.
+            mov     #Sine_Tab,&TBCCR1       ; Load first sample value into CCR1
+            mov     #01h,R14                ; Load inital ramp value into R14.
+            mov     #001h,&TBCCR3           ; This is for the DC value.  It will
+                                            ; result in a voltage of approximately
+                                            ; 2/3 Vcc when #0AAh. It is 2/3 of
+                                            ; #0FFh.
+;           bis     #MC0,&TBCTL             ; Start timer_B in up mode 
+
+            ret
+            
+;-----------------------------------------------------------------------------
+; Division with Hamacher 16 bit integer division
+;-----------------------------------------------------------------------------
+
+div_hamacher:
+
+            ;   R12 has dividend  
+            ;   R7 has divisor
+            
+            mov.w     #16,R14
+            clr.w     R9
+start:      rla.w     R12
+            rlc.w     R9
+            bis.w     #1, R12
+            sub.w     R7,R9
+            jge       loc1
+            add.w     R7,R9
+            bic.w     #1, R12
+loc1:       dec.w     R14
+            cmp.w     #0,R14
+            jnz       start
+            ret
+
+;----------------------------------------------------------------------------- 
+TB_ISR;    Timer_B ISR: changes the value in the CCR1 and CCR2 registers to 
+;          vary the PWM for the sinusoid and the ramp.  
+;----------------------------------------------------------------------------- 
+
+;--------------------------- ADC Conversions ---------------------------------
+;
+;******************************************************************************
+;   TES ADC Sequence of Non-repeated Conversions
+;
+;   A single sequence of conversions is performed - one conversion each on
+;   channels A3, A4, A5, and A7. Each conversion uses REF2_5V for the
+;   references. The conversion results are stored in ADC12MEM0, ADC12MEM1,
+;   ADC12MEM2, and ADC12MEM3 respectively and are moved to R5, R6, R7, and R8
+;   respectively after the sequence is complete.
+;
+;
+;                MSP430F149
+;            -----------------
+;           |                 |
+;      O -->|P6.3/A3          |
+;      F -->|P6.4/A4          |
+;      A -->|P6.5/A5          |
+;   Batt -->|P6.7/A7          |
+;           |                 |
+;   Ref: ;  
+;   M. Mitchell
+;   Texas Instruments Inc.
+;   Feb 2005
+;
+;   A. Kurt
+;   Teknofil
+;   Jan 2010
+;   Built with IAR Assembler for MSP430 v4.21.2 (4.21.2.50066)
+;******************************************************************************
+
+ADCloop     bis     #ADC12SC,&ADC12CTL0     ; Start conversions
+            nop                             ; Only Required for debug
+            mov     &ADC12MEM0,R5           ; Move A3 result -O
+            mov     &ADC12MEM1,R6           ; Move A4 result -F
+            mov     &ADC12MEM2,R7           ; Move A5 result -A
+            mov     &ADC12MEM3,R8           ; Move A7 result -B, IFG is reset
+                                            ;
+;testIFG    bit     #BIT0,&ADC12IFG         ; Conversion done?
+;           jz      testIFG                 ; No, test again      
+            rra     R5
+            rra     R5
+            rra     R5
+            rra     R5
+;           dec     R5                      ; Divide by 16 to get max FF 
+            mov     R5,&TBCCR3              
+            
+            rra     R6
+            rra     R6
+            rra     R6
+            rra     R6
+            inv.b   R6                       ; 1-F value (To easily tune F)
+;           add     R6, R6
+;           dec     R6                       ; Divide by 16 to get max FF 
+; So frequency range is 0.946 Hz to 24.92 Hz.
+;                       
+            rra     R7
+            rra     R7
+            rra     R7
+            rra     R7
+            inv.b   R7
+            rra     R7
+            rra     R7
+            rra     R7
+            rra     R7
+;           dec     R7                       ; Divide by 256 to get max F 
+                                             ; and invert to start with F
+
+;------------------------------------------AK----------------------------------
+            cmp     #00h, R11
+            jz      D3
+D2          dec     R11                     ; 
+            jz      D3                      ;  
+            jmp     SK                      ; Wait for another ISR
+D3          dec     R10 
+            jz      D0
+            jmp     SK
+            
+D0          incd    R15                     ; Increment the pointer R15 to
+                                            ; to point to next word of sine
+                                            ; table.  Must increment by 2
+                                            ; because the sine table is words
+                                            ; not bytes.
+            and     #03Fh,R15               ; ANDing with 03Fh gives an 
+                                            ; effective modulo 32 counter for
+                                            ; pointing to each value in the  
+                                            ; sine table
+            cmp    #0h, R7
+            jz     ZeroSin                  ; If PotA is zero, give zero O/P
+            clr    R9
+Calc_Tab
+            add.w  #40h, R9                 ; Calculate relevant Tab position 
+            dec    R7
+            jz     Wave_Out
+            jmp    Calc_Tab
+Wave_Out
+            add.w  R9, R15
+            mov.w  Sin_K1_Tab(R15),&TBCCR1  ; Move new sine value to CCR1
+            jmp    Cont1
+ZeroSin     
+            mov    #0h, R13
+            mov    R13, &TBCCR1             ; If R7 is Zero, then O/P=0
+                                            
+;Div         call   #div_hamacher           ; Division is OK.
+ ;           cmp    #00h, R9
+  ;          jz     A1
+   ;         mov    R9, R13
+    ;        jmp    A5
+;A1          mov    #01h, R13
+;A5          mov    R13, &TBCCR1            ; Amplitude scaled
+;A3          nop
+
+Cont1
+            add    #04h,R14                 ; Increment ramp value.
+                                            ; Changing the step size in R14
+                                            ; will change the frequency of
+                                            ; the ramp.
+            and    #0FFh,R14                ; And off unwanted bits
+            mov    R14,&TBCCR2              ; Move new ramp value to CCR2
+            clr    R11
+            clr    R10
+D1          mov    R6, R11                  ; This should set the period  
+D11         mov    #0Ah, R10                ; Sets maximum frequency effectively  
+SK          NOP
+            reti                            ; return with interrupts enabled
+            
+;-------------------------------------------------------------------------------
+        RSEG    DATA16_C                    ; Segment for const. data in Flash
+HR:
+        DB      DUB
+        DB      DIP, SOSPA, ENDTX
+Start:
+        DB      DOT, DOT, DOT, LETTER             ; S
+        DB      DOT, DASH, LETTER                 ; A
+        DB      DASH, DOT, DASH, DOT, LETTER      ; C
+        DB      DOT, DOT, LETTER                  ; I
+        DB      DASH, LETTER                      ; T
+        DB      SPACE                             ; /  
+        DB      DASH, DOT, DASH, LETTER           ; K
+        DB      DOT, DASH, LETTER                 ; A
+        DB      DOT, DASH, DOT, LETTER            ; R
+        DB      DOT, DASH, LETTER                 ; A
+        DB      DASH, DASH, LETTER                ; M
+        DB      DOT, DOT, DASH, LETTER            ; U
+        DB      DOT, DASH, DOT, LETTER            ; R
+        DB      DOT, DOT, DOT, LETTER             ; S
+        DB      DOT, LETTER                       ; E
+        DB      DOT, DASH, DOT, DOT, LETTER       ; L
+        DB      ENDTX
+; ... .- -.-. .. - / -.- .- .-. .- -- ..- .-. ... . .-..
+; Sacit Karamursel
+Battery:
+        DB      DOT, DOT, DOT, LETTER
+        DB      DASH, DASH, LETTER
+        DB      DOT, DOT, DOT, ENDTX
+;-------------------------------------------------------------------------------
+;---------------------------------------------------------------------------
+            COMMON  INTVEC                  ; MSP430x14x interrupt vectors
+;---------------------------------------------------------------------------
+            ORG     TIMERB0_VECTOR
+            DW      TB_ISR                        ; CCIFG0 interrupt
+            ORG     RESET_VECTOR
+            DW      RESET                         ; POR, ext. Reset, Watchdog
+            END 
